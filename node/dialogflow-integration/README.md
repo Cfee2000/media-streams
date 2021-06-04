@@ -2,11 +2,13 @@
 
 An Express app that responds with TwiML to `<Connect>` to a MediaStream and connect it with a specified [Dialogflow](https://dialogflow.com/).
 
+**Note: This version is in-progress. It includes a prototype for DialogFlow CX in the spirit of the implementation that was done for DialogFlow ES. The .ENV example gives you a template for following the CX pattern for specifiying a DialogFlow Agent, Project, etc. There are 2 additional files that are intended to replicate dialogflow-utils.js and server.js but for the CX implementation, so they have a "-cx" naming convention. You'll need to download the google credential file for CX similar to what is noted in the "Prerequsites" section below and then reference that credentials file in the .env file. Lastly, note the endpoint for the phone number webhook will route to "/stream" and not "/twiml" **
+
 ## Prerequisites
 
-* Setup a [Dialogflow Agent](https://cloud.google.com/dialogflow/docs/agents-overview) and make note of the Google Project ID
-* Download your [Google Credentials](https://cloud.google.com/docs/authentication/getting-started) (that has access to your Dialogflow project) to a file named `google_creds.json` store that in the root of this folder.
-* Optional: Setup and Configure the **gcloud** command line tool so that you can deploy to [Google AppEngine](https://cloud.google.com/sdk/gcloud/reference/app)
+- Setup a [Dialogflow Agent](https://cloud.google.com/dialogflow/docs/agents-overview) and make note of the Google Project ID
+- Download your [Google Credentials](https://cloud.google.com/docs/authentication/getting-started) (that has access to your Dialogflow project) to a file named `google_creds.json` store that in the root of this folder.
+- Optional: Setup and Configure the **gcloud** command line tool so that you can deploy to [Google AppEngine](https://cloud.google.com/sdk/gcloud/reference/app)
 
 ## Installation
 
@@ -71,18 +73,22 @@ The JSON will contain the Intent's information for you to code your response.
 Here is an example using a [Twilio Function](https://www.twilio.com/docs/runtime/functions):
 
 ```javascript
-exports.handler = function(context, event, callback) {
+exports.handler = function (context, event, callback) {
   const twiml = new Twilio.twiml.VoiceResponse();
   const dialogflow = JSON.parse(event.dialogflowJSON);
   switch (dialogflow.intent.displayName) {
     case 'speak-to-an-agent':
-      console.log(`Dialing agent number configured in environment: ${process.env.AGENT_NUMBER}`);
+      console.log(
+        `Dialing agent number configured in environment: ${process.env.AGENT_NUMBER}`
+      );
       twiml.dial(process.env.AGENT_NUMBER);
       break;
     default:
-      console.error(`Intent: "${dialogflow.intent.displayName}" (${dialogflow.intent.name}) was not handled.`);
+      console.error(
+        `Intent: "${dialogflow.intent.displayName}" (${dialogflow.intent.name}) was not handled.`
+      );
       twiml.hangup();
   }
   callback(null, twiml);
-}
+};
 ```
