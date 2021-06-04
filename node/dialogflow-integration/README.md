@@ -2,7 +2,7 @@
 
 An Express app that responds with TwiML to `<Connect>` to a MediaStream and connect it with a specified [Dialogflow](https://dialogflow.com/).
 
-**Note: This version is in-progress. It includes a prototype for DialogFlow CX in the spirit of the implementation that was done for DialogFlow ES. The .ENV example gives you a template for following the CX pattern for specifiying a DialogFlow Agent, Project, etc. There are 2 additional files that are intended to replicate dialogflow-utils.js and server.js but for the CX implementation, so they have a "-cx" naming convention. You'll need to download the google credential file for CX similar to what is noted in the "Prerequsites" section below and then reference that credentials file in the .env file. Lastly, note the endpoint for the phone number webhook will route to '/stream' and not '/twiml'**
+**Note: This version is in-progress. It includes a prototype for DialogFlow CX in the spirit of the implementation that was done for DialogFlow ES. The .ENV example gives you a template for following the CX pattern for specifiying a DialogFlow Agent, Project, etc. There are 2 additional files that are intended to replicate dialogflow-utils.js and server.js but for the CX implementation, so they have a "-cx" naming convention. You'll need to download the google credential file for CX similar to what is noted in the "Prerequsites" section below and then reference that credentials file in the .env file. Lastly, note the endpoint for the phone number webhook will route to '/stream' and not '/twiml'. Console logging is a bit chatty right now as I work through this.**
 
 ## Prerequisites
 
