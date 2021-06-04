@@ -1,40 +1,43 @@
-const EventEmitter = require("events");
-const { Transform, PassThrough, pipeline } = require("stream");
-const uuid = require("uuid");
-const dialogflow = require("dialogflow").v2beta1;
-const structjson = require("structjson");
-const WaveFile = require("wavefile").WaveFile;
-
+const EventEmitter = require('events');
+const { Transform, PassThrough, pipeline } = require('stream');
+const uuid = require('uuid');
+const dialogflow = require('dialogflow').v2beta1;
+const structjson = require('structjson');
+const WaveFile = require('wavefile').WaveFile;
 
 const projectId = process.env.DIALOGFLOW_PROJECT_ID;
 const intentQueryAudioInput = {
   audioConfig: {
-    audioEncoding: "AUDIO_ENCODING_MULAW",
+    audioEncoding: 'AUDIO_ENCODING_MULAW',
     sampleRateHertz: 8000,
-    languageCode: "en-US",
+    languageCode: 'en-US',
     singleUtterance: true,
   },
-  interimResults: false,
+  //interimResults: false,
 };
 
 function createDetectStream(isFirst, sessionId, sessionPath, sessionClient) {
   let queryInput = intentQueryAudioInput;
-  if (isFirst) {
-    queryInput = {
-      event: {
-        name: process.env.DIALOGFLOW_STARTING_EVENT_NAME,
-        languageCode: "en-US",
-      },
-    };
-  }
+  // if (isFirst) {
+  //   console.log('in isFirst = True');
+  //   queryInput = {
+  //     event: {
+  //       name: process.env.DIALOGFLOW_STARTING_EVENT_NAME,
+  //       languageCode: 'en-US',
+  //     },
+  //   };
+  // } else {
+  //   console.log('not isFirst = False');
+  // }
   const initialStreamRequest = {
     queryInput,
     session: sessionPath,
     queryParams: {
-      session: sessionClient.sessionPath(projectId, sessionId),
+      //session: sessionClient.sessionPath(projectId, sessionId),
+      session: sessionPath,
     },
     outputAudioConfig: {
-      audioEncoding: "OUTPUT_AUDIO_ENCODING_LINEAR_16",
+      audioEncoding: 'OUTPUT_AUDIO_ENCODING_LINEAR_16',
     },
   };
 
@@ -44,6 +47,7 @@ function createDetectStream(isFirst, sessionId, sessionPath, sessionClient) {
 }
 
 function createAudioResponseStream() {
+  console.log('in AudioResponseStream');
   return new Transform({
     objectMode: true,
     transform: (chunk, encoding, callback) => {
@@ -61,12 +65,13 @@ function createAudioResponseStream() {
 }
 
 function createAudioRequestStream() {
+  console.log('in AudioRequestStream');
   return new Transform({
     objectMode: true,
     transform: (chunk, encoding, callback) => {
-      const msg = JSON.parse(chunk.toString("utf8"));
+      const msg = JSON.parse(chunk.toString('utf8'));
       // Only process media messages
-      if (msg.event !== "media") return callback();
+      if (msg.event !== 'media') return callback();
       // This is mulaw/8000 base64-encoded
       return callback(null, { inputAudio: msg.media.payload });
     },
@@ -111,60 +116,65 @@ class DialogflowService extends EventEmitter {
   }
 
   startPipeline() {
+    //console.log('in startPipeline');
+    //console.log(this.isReady);
     if (!this.isReady) {
       // Generate the streams
       this._requestStream = new PassThrough({ objectMode: true });
-      const audioStream = createAudioRequestStream();
-      const detectStream = createDetectStream(
+      this.audioStream = createAudioRequestStream();
+      this.detectStream = createDetectStream(
         this.isFirst,
         this.sessionId,
         this.sessionPath,
         this.sessionClient
       );
-      const responseStream = new PassThrough({ objectMode: true });
-      const audioResponseStream = createAudioResponseStream();
+      this.responseStream = new PassThrough({ objectMode: true });
+      this.audioResponseStream = createAudioResponseStream();
       if (this.isFirst) this.isFirst = false;
       this.isInterrupted = false;
       // Pipeline is async....
       pipeline(
         this._requestStream,
-        audioStream,
-        detectStream,
-        responseStream,
-        audioResponseStream,
+        this.audioStream,
+        this.detectStream,
+        this.responseStream,
+        this.audioResponseStream,
         (err) => {
           if (err) {
-            this.emit("error", err);
+            this.emit('error', err);
           }
           // Update the state so as to create a new pipeline
           this.isReady = false;
         }
       );
 
-      this._requestStream.on("data", (data) => {
-        const msg = JSON.parse(data.toString("utf8"));
-        if (msg.event === "start") {
+      this._requestStream.on('data', (data) => {
+        //console.log('requestStream - data');
+        const msg = JSON.parse(data.toString('utf8'));
+        if (msg.event === 'start') {
           console.log(`Captured call ${msg.start.callSid}`);
-          this.emit("callStarted", {
+          this.emit('callStarted', {
             callSid: msg.start.callSid,
-            streamSid: msg.start.streamSid
+            streamSid: msg.start.streamSid,
           });
         }
-        if (msg.event === "mark") {
+        if (msg.event === 'mark') {
           console.log(`Mark received ${msg.mark.name}`);
-          if (msg.mark.name === "endOfInteraction") {
-            this.emit("endOfInteraction", this.getFinalQueryResult());
+          if (msg.mark.name === 'endOfInteraction') {
+            this.emit('endOfInteraction', this.getFinalQueryResult());
           }
         }
       });
 
-      responseStream.on("data", (data) => {
+      this.responseStream.on('data', (data) => {
+        console.log('responseStream - data');
+        console.log(data);
         if (
           data.recognitionResult &&
           data.recognitionResult.transcript &&
           data.recognitionResult.transcript.length > 0
         ) {
-          this.emit("interrupted", data.recognitionResult.transcript);
+          this.emit('interrupted', data.recognitionResult.transcript);
         }
         if (
           data.queryResult &&
@@ -178,8 +188,10 @@ class DialogflowService extends EventEmitter {
           this.stop();
         }
       });
-      audioResponseStream.on("data", (data) => {
-        this.emit("audio", data.toString('base64'));
+      this.audioResponseStream.on('data', (data) => {
+        console.log('audioResponseStream - data');
+        console.log(data);
+        this.emit('audio', data.toString('base64'));
       });
       // Set ready
       this.isReady = true;
@@ -188,12 +200,12 @@ class DialogflowService extends EventEmitter {
   }
 
   stop() {
-    console.log("Stopping Dialogflow");
+    console.log('Stopping Dialogflow');
     this.isStopped = true;
   }
 
   finish() {
-    console.log("Disconnecting from Dialogflow");
+    console.log('Disconnecting from Dialogflow');
     this._requestStream.end();
   }
 }

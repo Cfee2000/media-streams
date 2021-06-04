@@ -1,4 +1,4 @@
-"use strict";
+'use strict';
 
 const fs = require('fs');
 const path = require('path');
@@ -20,30 +20,30 @@ function log(message, ...args) {
   console.log(new Date(), message, ...args);
 }
 
-function handleRequest(request, response){
+function handleRequest(request, response) {
   try {
     dispatcher.dispatch(request, response);
-  } catch(err) {
+  } catch (err) {
     console.error(err);
   }
 }
 
-dispatcher.onPost('/twiml', function(req,res) {
+dispatcher.onPost('/twiml', function (req, res) {
   log('POST TwiML');
 
-  var filePath = path.join(__dirname+'/templates', 'streams.xml');
+  var filePath = path.join(__dirname + '/templates', 'streams.xml');
   var stat = fs.statSync(filePath);
 
   res.writeHead(200, {
     'Content-Type': 'text/xml',
-    'Content-Length': stat.size
+    'Content-Length': stat.size,
   });
 
   var readStream = fs.createReadStream(filePath);
   readStream.pipe(res);
 });
 
-mediaws.on('connect', function(connection) {
+mediaws.on('connect', function (connection) {
   log('Media WS: Connection accepted');
   new MediaStream(connection);
 });
@@ -56,23 +56,23 @@ class MediaStream {
     this.messageCount = 0;
   }
 
-  processMessage(message){
+  processMessage(message) {
     if (message.type === 'utf8') {
       var data = JSON.parse(message.utf8Data);
-      if (data.event === "connected") {
+      if (data.event === 'connected') {
         log('Media WS: Connected event received: ', data);
       }
-      if (data.event === "start") {
+      if (data.event === 'start') {
         log('Media WS: Start event received: ', data);
       }
-      if (data.event === "media") {
+      if (data.event === 'media') {
         if (!this.hasSeenMedia) {
           log('Media WS: Media event received: ', data);
-          log('Media WS: Suppressing additional messages...');
-          this.hasSeenMedia = true;
+          //log('Media WS: Suppressing additional messages...');
+          //this.hasSeenMedia = true;
         }
       }
-      if (data.event === "stop") {
+      if (data.event === 'stop') {
         log('Media WS: Stop event received: ', data);
       }
       this.messageCount++;
@@ -81,11 +81,15 @@ class MediaStream {
     }
   }
 
-  close(){
-    log('Media WS: Stopped. Received a total of [' + this.messageCount + '] messages');
+  close() {
+    log(
+      'Media WS: Stopped. Received a total of [' +
+        this.messageCount +
+        '] messages'
+    );
   }
 }
 
-wsserver.listen(HTTP_SERVER_PORT, function(){
-  console.log("Server listening on: http://localhost:%s", HTTP_SERVER_PORT);
+wsserver.listen(HTTP_SERVER_PORT, function () {
+  console.log('Server listening on: http://localhost:%s', HTTP_SERVER_PORT);
 });
