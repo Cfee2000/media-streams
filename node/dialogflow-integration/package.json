@@ -2,10 +2,11 @@
   "name": "dialogflow-mediastreams",
   "version": "1.0.0",
   "description": "",
-  "main": "server.js",
+  "main": "server-cx-ccai.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "nodenv ."
+    "dev": "nodenv .",
+    "start": "node server-cx-ccai.js"
   },
   "keywords": [],
   "author": "",
