@@ -74,35 +74,39 @@ async function createDialogFlowConversation() {
 
 createDialogFlowConversation();
 
-function createDetectStream(isFirst) {
+function createDetectStream() {
   console.log('conversationID in createDetectStream: ' + conversationID);
   console.log('participantID in createDetectStream: ' + participantID);
 
-  const firstStreamingAnalyzeContentRequest = {
-    participant: `projects/${process.env.DIALOGFLOW_CX_PROJECT_ID}/locations/${process.env.DIALOGFLOW_CX_LOCATION}/conversations/${conversationID}/participants/${participantID}`,
-    audioConfig: {
-      audioEncoding: 'AUDIO_ENCODING_MULAW',
-      sampleRateHertz: 8000,
-      languageCode: 'en',
-      modelVariant: 'USE_BEST_AVAILABLE',
-      singleUtterance: true,
-      bargeInConfig: {
-        noBargeInDuration: {
-          seconds: 5,
-        },
-        totalDuration: {
-          seconds: 15,
-        },
+  const tempParticipantConfig = `projects/${process.env.DIALOGFLOW_CX_PROJECT_ID}/locations/${process.env.DIALOGFLOW_CX_LOCATION}/conversations/${conversationID}/participants/${participantID}`;
+  const tempAudioConfig = {
+    audioEncoding: 'AUDIO_ENCODING_MULAW',
+    sampleRateHertz: 8000,
+    languageCode: 'en-us',
+    modelVariant: 'USE_BEST_AVAILABLE',
+    singleUtterance: true,
+    bargeInConfig: {
+      noBargeInDuration: {
+        seconds: 5,
+      },
+      totalDuration: {
+        seconds: 15,
       },
     },
-    replyAudioConfig: {
-      audioEncoding: 'OUTPUT_AUDIO_ENCODING_LINEAR_16',
-      sampleRateHertz: 16000,
-    },
+  };
+  const tempReplyAudioConfig = {
+    audioEncoding: 'OUTPUT_AUDIO_ENCODING_LINEAR_16',
+    sampleRateHertz: 16000,
+  };
+
+  let streamingAnalyzeContentRequest = {
+    participant: tempParticipantConfig,
+    audioConfig: tempAudioConfig,
+    replyAudioConfig: tempReplyAudioConfig,
   };
 
   const detectStream = participantsClient.streamingAnalyzeContent();
-  detectStream.write(firstStreamingAnalyzeContentRequest);
+  detectStream.write(streamingAnalyzeContentRequest);
   return detectStream;
 }
 
@@ -176,10 +180,14 @@ class DialogflowService extends EventEmitter {
       // Generate the streams
       this._requestStream = new PassThrough({ objectMode: true });
       this.audioStream = createAudioRequestStream();
-      this.detectStream = createDetectStream(this.isFirst);
+      this.detectStream = createDetectStream();
       this.responseStream = new PassThrough({ objectMode: true });
       this.audioResponseStream = createAudioResponseStream();
-      if (this.isFirst) this.isFirst = false;
+      if (this.isFirst) {
+        this.isFirst = false;
+        // isFirst trigger has to be moved here because you need to setup the other streams first
+        this.detectStream.write({ inputText: 'hello' });
+      }
       this.isInterrupted = false;
       // Pipeline is async....
       pipeline(
@@ -225,6 +233,7 @@ class DialogflowService extends EventEmitter {
         ) {
           this.emit('interrupted', data.recognitionResult.transcript);
         }
+
         if (
           data.queryResult &&
           data.queryResult.intent &&
@@ -241,6 +250,8 @@ class DialogflowService extends EventEmitter {
         console.log('audioResponseStream - data');
         console.log(data);
         this.emit('audio', data.toString('base64'));
+        // to trigger reset stream
+        this.isReady = false;
       });
       // Set ready
       this.isReady = true;
@@ -255,6 +266,7 @@ class DialogflowService extends EventEmitter {
 
   finish() {
     console.log('Disconnecting from Dialogflow');
+    this.isStopped = true;
     this._requestStream.end();
   }
 }
