@@ -1,22 +1,21 @@
 const EventEmitter = require('events');
 const { Transform, PassThrough, pipeline } = require('stream');
 const uuid = require('uuid');
-//const dialogflow = require("dialogflow").v2beta1;
-const { SessionsClient } = require('@google-cloud/dialogflow-cx');
+const {
+  ConversationsClient,
+  ParticipantsClient,
+  ConversationProfilesClient,
+} = require('@google-cloud/dialogflow');
+
 const structjson = require('structjson');
 const WaveFile = require('wavefile').WaveFile;
-const util = require('util');
-const pump = util.promisify(pipeline);
 
 const intentQueryAudioFirstRequest = {
   languageCode: process.env.DIALOGFLOW_CX_LANGUAGE_CODE,
   audio: {
     config: {
       audioEncoding: 'AUDIO_ENCODING_MULAW',
-      //audioEncoding: 'AUDIO_ENCODING_LINEAR_16',
       sampleRateHertz: 8000,
-      //sampleRateHertz: 16000,
-      //languageCode: 'en-US',
       singleUtterance: true,
     },
   },
@@ -34,9 +33,6 @@ function createDetectStream(isFirst, sessionId, sessionPath, sessionClient) {
   const initialStreamRequest = {
     queryInput,
     session: sessionPath,
-    queryParams: {
-      session: sessionPath,
-    },
     outputAudioConfig: {
       audioEncoding: 'OUTPUT_AUDIO_ENCODING_LINEAR_16',
       //audioEncoding: 'OUTPUT_AUDIO_ENCODING_MULAW',
@@ -44,7 +40,9 @@ function createDetectStream(isFirst, sessionId, sessionPath, sessionClient) {
   };
 
   const detectStream = sessionClient.streamingDetectIntent();
-  detectStream.write(initialStreamRequest);
+  if (isFirst) {
+    detectStream.write(initialStreamRequest);
+  }
   return detectStream;
 }
 
@@ -53,23 +51,31 @@ function createAudioResponseStream() {
   return new Transform({
     objectMode: true,
     transform: (chunk, encoding, callback) => {
+      console.log(chunk);
       if (
         !chunk.detectIntentResponse ||
-        chunk.detectIntentResponse.outputAudio.length == 0
+        chunk.detectIntentResponse.outputAudio.length == 0 ||
+        chunk.detectIntentResponse.queryResult.transcript.length == 0
       ) {
         return callback();
+      } else {
+        // Convert the LINEAR 16 Wavefile to 8000/mulaw
+        //console.log('At WaveFile Logic......................');
+        const wav = new WaveFile();
+        wav.fromBuffer(chunk.detectIntentResponse.outputAudio);
+        wav.toSampleRate(8000);
+        wav.toMuLaw();
+        console.log(
+          'My transcript is: ' +
+            chunk.detectIntentResponse.queryResult.transcript
+        );
+
+        return callback(null, Buffer.from(wav.data.samples));
+        // return callback(
+        //   null,
+        //   Buffer.from(chunk.detectIntentResponse.outputAudio).toString()
+        // );
       }
-      // Convert the LINEAR 16 Wavefile to 8000/mulaw
-      //console.log('At WaveFile Logic......................');
-      const wav = new WaveFile();
-      wav.fromBuffer(chunk.detectIntentResponse.outputAudio);
-      wav.toSampleRate(8000);
-      wav.toMuLaw();
-      return callback(null, Buffer.from(wav.data.samples));
-      // return callback(
-      //   null,
-      //   Buffer.from(chunk.detectIntentResponse.outputAudio).toString()
-      // );
     },
   });
 }
@@ -81,12 +87,15 @@ function createAudioRequestStream() {
     transform: (chunk, encoding, callback) => {
       //console.log(chunk);
       const msg = JSON.parse(chunk.toString('utf8'));
+
       // Only process media messages
       if (msg.event !== 'media') return callback();
       // This is mulaw/8000 base64-encoded
-      return callback(null, {
-        queryInput: { audio: { audio: msg.media.payload } },
-      });
+      else {
+        return callback(null, {
+          queryInput: { audio: { audio: msg.media.payload } },
+        });
+      }
       //return callback(null, { inputAudio: msg.media.payload });
     },
   });
@@ -101,6 +110,7 @@ class DialogflowCXService extends EventEmitter {
     this.sessionClient = new SessionsClient({
       apiEndpoint: `${process.env.DIALOGFLOW_CX_LOCATION}-dialogflow.googleapis.com`,
     });
+
     console.log('Project ID: ' + process.env.DIALOGFLOW_CX_PROJECT_ID);
     console.log('Location: ' + process.env.DIALOGFLOW_CX_LOCATION);
     console.log('Agent ID: ' + process.env.DIALOGFLOW_CX_AGENT_ID);
@@ -159,22 +169,6 @@ class DialogflowCXService extends EventEmitter {
       this.audioResponseStream = createAudioResponseStream();
       if (this.isFirst) this.isFirst = false;
       this.isInterrupted = false;
-      // Pipeline is async....
-      // await pump(
-      //   this._requestStream,
-      //   audioStream,
-      //   detectStream,
-      //   responseStream,
-      //   audioResponseStream
-      // )
-      //   .then((success) => {
-      //     this.isReady = false;
-      //     console.log('IM NOW FALSE!!!!!!!');
-      //     console.log(success);
-      //   })
-      //   .catch((err) => {
-      //     console.log(err);
-      //   });
 
       pipeline(
         this._requestStream,
@@ -188,23 +182,89 @@ class DialogflowCXService extends EventEmitter {
           } else {
             // Update the state so as to create a new pipeline
             this.isReady = false;
-            console.log('IM NOW FALSE!!!!!!!');
+            console.log('isReady set to False');
           }
         }
       );
 
       this._requestStream.on('data', (data) => {
-        if (!this.audioStream.write(data)) {
-          this._requestStream.pause();
-          this.audioStream.once('drain', () => {
-            this._requestStream.resume();
-          });
-        }
+        // if (!this.audioStream.write(data)) {
+        //   this._requestStream.pause();
+        //   this.audioStream.once('drain', () => {
+        //     this._requestStream.resume();
+        //   });
+        // }
         //console.log('requestStream - data');
         const msg = JSON.parse(data.toString('utf8'));
         //console.log(msg);
         if (msg.event === 'start') {
           console.log(`Captured call ${msg.start.callSid}`);
+
+          //Now that the call is in-progress, spin up the DialogFlow CX Conversation
+          //PRE-REQUISITE: A one-time setup for a DialogflowCX ConversationProfile will need to be created (see cx-conversationProfileSetup.js)
+
+          //STEP 1: Create a new instance of a ConversationsClient and ParticipantsClient and provide the apiEndpoint
+          const conversationsClient = new ConversationsClient({
+            apiEndpoint: process.env.DIALOGFLOW_CX_API_ENDPOINT,
+          });
+          const participantsClient = new ParticipantsClient({
+            apiEndpoint: process.env.DIALOGFLOW_CX_API_ENDPOINT,
+          });
+
+          //STEP 2: Create a function that will encapsulate the logic required to create the DialogFlow CX agent interaction once the Twilio call is connected
+          async function createDialogFlowConversation() {
+            //STEP 3: Contstruct the ConversationRequest object that will be passed to the createConversation() function
+            //https://cloud.google.com/dialogflow/priv/docs/reference/rpc/google.cloud.dialogflow.v2beta1#google.cloud.dialogflow.v2beta1.CreateConversationRequest
+            const conversationsRequest = {
+              parent: `projects/cfeehantwiliocxintegration/locations/us-central1`,
+              conversation: {
+                conversationProfile: `projects/cfeehantwiliocxintegration/locations/us-central1/conversationProfiles/${process.env.DIALOGFLOW_CX_CONVERSATION_PROFILE_ID}`,
+              },
+            };
+            try {
+              //STEP 4: Use the createConversation method on your instance of ConversationsClient and pass the ConversationRequest object we created in Step 3. This will return a Conversation object with a ConversationID that can be used to create a Participant object representing the caller
+              const [conversation] =
+                await conversationsClient.createConversation(
+                  conversationsRequest
+                );
+              console.log(conversation); //Log the conversation JSON
+
+              const convoParentPath = conversation.name;
+              console.log('convoParentPath: ' + convoParentPath);
+              const conversationID = convoParentPath.substring(
+                convoParentPath.lastIndexOf('/') + 1
+              );
+              console.log('conversationID: ' + conversationID);
+
+              //STEP 5: Contstruct the ParticipantRequest object that will be passed to the createParticipant() method
+              //https://cloud.google.com/dialogflow/priv/docs/reference/rpc/google.cloud.dialogflow.v2beta1#createparticipantrequest
+              const participantRequest = {
+                parent: `projects/cfeehantwiliocxintegration/locations/us-central1/conversations/${conversationID}`,
+                participant: {
+                  role: 'END_USER',
+                },
+              };
+
+              //STEP 6: Use the createParticipant method on your instance of ParticipantsClient and pass the ParticipantRequest object we created in Step 5. This will return a Participant object with a ParticipantID that can be used to create our StreamingAnalyzeContent request to DialogFlow CX
+              const [participant] = await participantsClient.createParticipant(
+                participantRequest
+              );
+              console.log(participant); //Log the participant JSON
+
+              const participantParentPath = participant.name;
+              console.log('participtParentPath: ' + participantParentPath);
+              const participantID = participantParentPath.substring(
+                participantParentPath.lastIndexOf('/') + 1
+              );
+              console.log('participantID: ' + participantID);
+            } catch (err) {
+              console.log(err);
+            }
+          }
+
+          //Call our createDialogFlowConversation function to be used
+          createDialogFlowConversation();
+
           this.emit('callStarted', {
             callSid: msg.start.callSid,
             streamSid: msg.start.streamSid,
@@ -219,8 +279,8 @@ class DialogflowCXService extends EventEmitter {
       });
 
       this.responseStream.on('data', (data) => {
-        console.log('responseStream - data');
-        console.log(data);
+        //console.log('responseStream - data');
+        //console.log(data);
         if (
           data.recognitionResult &&
           data.recognitionResult.transcript &&
@@ -262,7 +322,7 @@ class DialogflowCXService extends EventEmitter {
       });
       this.audioResponseStream.on('data', (data) => {
         console.log('audioResponseStream - data');
-        console.log(data);
+        //console.log(data);
         this.emit('audio', data.toString('base64'));
         //this.sessionClient.streamingDetectIntent().end();
         //this.isReady = false;
@@ -288,55 +348,6 @@ class DialogflowCXService extends EventEmitter {
         //console.log('detectStream - data');
         //console.log(data);
       });
-
-      this._requestStream.on('error', (err) => {
-        console.log(err);
-      });
-      this.responseStream.on('error', (err) => {
-        console.log(err);
-      });
-      this.audioResponseStream.on('error', (err) => {
-        console.log(err);
-      });
-      this.audioStream.on('error', (err) => {
-        console.log(err);
-      });
-      this.detectStream.on('error', (err) => {
-        console.log(err);
-      });
-
-      this._requestStream.on('end', () => {
-        console.log('request stream end;;;;;;;;;;;;;;;;;;');
-      });
-      this.responseStream.on('end', () => {
-        console.log('response stream end;;;;;;;;;;;;;;;;;;');
-      });
-      this.audioResponseStream.on('end', () => {
-        console.log('audio response stream end;;;;;;;;;;;;;;;;;;');
-      });
-      this.audioStream.on('end', () => {
-        console.log('audio stream end;;;;;;;;;;;;;;;;;;');
-      });
-      this.detectStream.on('end', () => {
-        console.log('detect stream end;;;;;;;;;;;;;;;;;;');
-      });
-
-      this._requestStream.on('finish', () => {
-        console.log('request stream finish;;;;;;;;;;;;;;;;;;');
-      });
-      this.responseStream.on('finish', () => {
-        console.log('response stream finish;;;;;;;;;;;;;;;;;;');
-      });
-      this.audioResponseStream.on('finish', () => {
-        console.log('audio response stream finish;;;;;;;;;;;;;;;;;;');
-      });
-      this.audioStream.on('finish', () => {
-        console.log('audio stream finish;;;;;;;;;;;;;;;;;;');
-      });
-      this.detectStream.on('finish', () => {
-        console.log('detect stream finish;;;;;;;;;;;;;;;;;;');
-      });
-
       // Set ready
       this.isReady = true;
     }

@@ -81,6 +81,7 @@ app.ws('/media', (ws, req) => {
 
     dialogflowCXService.on('audio', (audio) => {
       console.log(' audio event');
+      //dialogflowCXService._requestStream.pause();
       const mediaMessage = {
         streamSid,
         event: 'media',
@@ -91,6 +92,17 @@ app.ws('/media', (ws, req) => {
       const mediaJSON = JSON.stringify(mediaMessage);
       console.log(`Sending audio (${audio.length} characters)`);
       mediaStream.write(mediaJSON);
+
+      //dialogflowCXService._requestStream.end();
+      //dialogflowCXService.audioStream.end();
+      //dialogflowCXService.detectStream.end();
+      //dialogflowCXService.responseStream.end();
+      //dialogflowCXService.audioResponseStream.end();
+      //dialogflowCXService._requestStream.destroy();
+      //dialogflowCXService.audioStream.destroy();
+      //dialogflowCXService.detectStream
+      //dialogflowCXService.responseStream.destroy();
+      //dialogflowCXService.audioResponseStream.destroy();
 
       if (dialogflowCXService.audioStream.isPaused()) {
         //console.log(dialogflowCXService.audioStream);

@@ -1,0 +1,51 @@
+CoversationProfile ID (Static) : WTR5kahsRO-OwQPaH7L_EQ
+
+{
+  name: 'projects/cfeehantwiliocxintegration/locations/us-central1/conversationProfiles/WTR5kahsRO-OwQPaH7L_EQ',
+  displayName: 'Random Agent Name',
+  automatedAgentConfig: {
+    agent: 'projects/cfeehantwiliocxintegration/locations/us-central1/agents/c8613d53-f3b7-49c0-be4c-4787fc85f9dc/environments/draft'
+  },
+  humanAgentAssistantConfig: null,
+  humanAgentHandoffConfig: null,
+  notificationConfig: null,
+  loggingConfig: null,
+  newMessageEventNotificationConfig: null,
+  sttConfig: null,
+  languageCode: 'en-US',
+  createTime: null,
+
+ConversationID (Dynamic): 119jr13g6mDTfysaI1z_vwFRw
+
+{
+  name: 'projects/cfeehantwiliocxintegration/locations/us-central1/conversations/119jr13g6mDTfysaI1z_vwFRw',
+  lifecycleState: 'IN_PROGRESS',
+  conversationProfile: 'projects/cfeehantwiliocxintegration/locations/us-central1/conversationProfiles/WTR5kahsRO-OwQPaH7L_EQ',
+  phoneNumber: null,
+  startTime: { seconds: '1623339607', nanos: 675691000 },
+  endTime: null,
+  conversationStage: 'VIRTUAL_AGENT_STAGE'
+}
+
+ParticipantID (Dynamic): o4ABHb2rT0W7sZwZEq6Phg
+
+{
+  name: 'projects/cfeehantwiliocxintegration/locations/us-central1/conversations/119jr13g6mDTfysaI1z_vwFRw/participants/o4ABHb2rT0W7sZwZEq6Phg',
+  role: 'END_USER',
+  sipRecordingMediaLabel: ''
+}
+
+
+
+
+ConversationsComplete (Dynamic): [USE THE CONVERATION ID ABOVE eg. 119jr13g6mDTfysaI1z_vwFRw]
+
+{
+  name: 'projects/cfeehantwiliocxintegration/locations/us-central1/conversations/119jr13g6mDTfysaI1z_vwFRw',
+  lifecycleState: 'COMPLETED',
+  conversationProfile: 'projects/cfeehantwiliocxintegration/locations/us-central1/conversationProfiles/WTR5kahsRO-OwQPaH7L_EQ',
+  phoneNumber: null,
+  startTime: { seconds: '1623339607', nanos: 675691000 },
+  endTime: { seconds: '1623343679', nanos: 272356000 },
+  conversationStage: 'VIRTUAL_AGENT_STAGE'
+}
