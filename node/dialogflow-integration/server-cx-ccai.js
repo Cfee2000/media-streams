@@ -60,122 +60,113 @@ app.ws('/media', (ws, req) => {
   });
 
   // pakmingw@: added try catch to handle hangup exceptions
+  try {
+    const dialogflowService = new DialogflowService();
 
-  const dialogflowService = new DialogflowService();
+    mediaStream.on('data', (data) => {
+      //console.log('mediaStream - data');
+      dialogflowService.send(data);
+    });
 
-  mediaStream.on('data', (data) => {
-    //console.log('mediaStream - data');
-    dialogflowService.send(data);
-  });
-
-  mediaStream.on('finish', () => {
-    console.log('MediaStream has finished');
-    dialogflowService.finish();
-  });
-
-  dialogflowService.on('callStarted', (data) => {
-    console.log('in callStarted - event');
-    callSid = data.callSid;
-    streamSid = data.streamSid;
-  });
-
-  dialogflowService.on('audio', (audio) => {
-    console.log('in audio - event');
-    const mediaMessage = {
-      streamSid,
-      event: 'media',
-      media: {
-        payload: audio,
-      },
-    };
-    const mediaJSON = JSON.stringify(mediaMessage);
-    console.log(`Sending audio (${audio.length} characters)`);
-    // add catch here for hangup
-    try {
-      mediaStream.write(mediaJSON);
-    } catch (err) {
-      console.error('Error: ' + err);
-      dialogflowService.isStopped = true;
-      dialogflowService.stop();
+    mediaStream.on('finish', () => {
+      console.log('MediaStream has finished');
       dialogflowService.finish();
-    }
+    });
 
-    if (dialogflowService.audioStream.isPaused()) {
-      console.log('audio stream is paused $$$$$$$$$$$$$$$');
-      //dialogflowService.audioStream.resume();
-      //console.log('audio stream is unpaused $$$$$$$$$$$$$$$');
-    }
-    if (dialogflowService.responseStream.isPaused()) {
-      console.log('response stream is paused $$$$$$$$$$$$$$$');
-    }
-    if (dialogflowService._requestStream.isPaused()) {
-      console.log('requestStream is paused $$$$$$$$$$$$$$$');
-    }
-    if (dialogflowService.detectStream.isPaused()) {
-      console.log('detectStream is paused $$$$$$$$$$$$$$$');
-    }
-    if (dialogflowService.audioResponseStream.isPaused()) {
-      console.log('audioResponseStream is paused $$$$$$$$$$$$$$$');
-    }
-    // If this is the last message
-    if (dialogflowService.isStopped) {
-      const markMessage = {
+    dialogflowService.on('callStarted', (data) => {
+      console.log('in callStarted - event');
+      callSid = data.callSid;
+      streamSid = data.streamSid;
+    });
+
+    dialogflowService.on('audio', (audio) => {
+      console.log('in audio - event');
+      const mediaMessage = {
         streamSid,
-        event: 'mark',
-        mark: {
-          name: 'endOfInteraction',
+        event: 'media',
+        media: {
+          payload: audio,
         },
       };
-      const markJSON = JSON.stringify(markMessage);
-      console.log('Sending end of interaction mark', markJSON);
-      // handles hangup
-      try {
-        mediaStream.write(markJSON);
-      } catch (err) {
-        console.error('Error: ' + err);
-        dialogflowService.isStopped = true;
-        dialogflowService.stop();
-        dialogflowService.finish();
+      const mediaJSON = JSON.stringify(mediaMessage);
+      console.log(`Sending audio (${audio.length} characters)`);
+      // add catch here for hangup
+      mediaStream.write(mediaJSON);
+
+      if (dialogflowService.audioStream.isPaused()) {
+        console.log('audio stream is paused $$$$$$$$$$$$$$$');
+        //dialogflowService.audioStream.resume();
+        //console.log('audio stream is unpaused $$$$$$$$$$$$$$$');
       }
-    }
-  });
+      if (dialogflowService.responseStream.isPaused()) {
+        console.log('response stream is paused $$$$$$$$$$$$$$$');
+      }
+      if (dialogflowService._requestStream.isPaused()) {
+        console.log('requestStream is paused $$$$$$$$$$$$$$$');
+      }
+      if (dialogflowService.detectStream.isPaused()) {
+        console.log('detectStream is paused $$$$$$$$$$$$$$$');
+      }
+      if (dialogflowService.audioResponseStream.isPaused()) {
+        console.log('audioResponseStream is paused $$$$$$$$$$$$$$$');
+      }
+      // If this is the last message
+      if (dialogflowService.isStopped) {
+        const markMessage = {
+          streamSid,
+          event: 'mark',
+          mark: {
+            name: 'endOfInteraction',
+          },
+        };
+        const markJSON = JSON.stringify(markMessage);
+        console.log('Sending end of interaction mark', markJSON);
+        mediaStream.write(markJSON);
+      }
+    });
 
-  dialogflowService.on('interrupted', (transcript) => {
-    console.log(`Interrupted with "${transcript}"`);
-    if (!dialogflowService.isInterrupted) {
-      console.log('Clearing...');
-      const clearMessage = {
-        event: 'clear',
-        streamSid,
-      };
-      mediaStream.write(JSON.stringify(clearMessage));
-      dialogflowService.isInterrupted = true;
-    }
-  });
+    dialogflowService.on('interrupted', (transcript) => {
+      console.log(`Interrupted with "${transcript}"`);
+      if (!dialogflowService.isInterrupted) {
+        console.log('Clearing...');
+        const clearMessage = {
+          event: 'clear',
+          streamSid,
+        };
+        mediaStream.write(JSON.stringify(clearMessage));
+        dialogflowService.isInterrupted = true;
+      }
+    });
 
-  dialogflowService.on('endOfInteraction', (queryResult) => {
-    console.log('In endofInteraction');
-    const response = new Twilio.twiml.VoiceResponse();
-    const url = process.env.END_OF_INTERACTION_URL;
-    if (url) {
-      const qs = JSON.stringify(queryResult);
-      // In case the URL has a ?, use an ampersand
-      const appendage = url.includes('?') ? '&' : '?';
-      response.redirect(
-        `${url}${appendage}dialogflowJSON=${encodeURIComponent(qs)}`
-      );
-    } else {
-      response.hangup();
-    }
-    const twiml = response.toString();
-    return client
-      .calls(callSid)
-      .update({ twiml })
-      .then((call) =>
-        console.log(`Updated Call(${callSid}) with twiml: ${twiml}`)
-      )
-      .catch((err) => console.error(err));
-  });
+    dialogflowService.on('endOfInteraction', (queryResult) => {
+      console.log('In endofInteraction');
+      const response = new Twilio.twiml.VoiceResponse();
+      const url = process.env.END_OF_INTERACTION_URL;
+      if (url) {
+        const qs = JSON.stringify(queryResult);
+        // In case the URL has a ?, use an ampersand
+        const appendage = url.includes('?') ? '&' : '?';
+        response.redirect(
+          `${url}${appendage}dialogflowJSON=${encodeURIComponent(qs)}`
+        );
+      } else {
+        response.hangup();
+      }
+      const twiml = response.toString();
+      return client
+        .calls(callSid)
+        .update({ twiml })
+        .then((call) =>
+          console.log(`Updated Call(${callSid}) with twiml: ${twiml}`)
+        )
+        .catch((err) => console.error(err));
+    });
+  } catch (err) {
+    console.error('Error: ' + err);
+    dialogflowService.isStopped = true;
+    dialogflowService.stop();
+    dialogflowService.finish();
+  }
 });
 
 const listener = app.listen(PORT, () => {
