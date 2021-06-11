@@ -3,10 +3,8 @@ const { Transform, PassThrough, pipeline } = require('stream');
 const uuid = require('uuid');
 const structjson = require('structjson');
 const WaveFile = require('wavefile').WaveFile;
-const {
-  ConversationsClient,
-  ParticipantsClient,
-} = require('@google-cloud/dialogflow');
+const { ConversationsClient, ParticipantsClient, v2beta1 } =
+  require('@google-cloud/dialogflow').v2;
 
 let conversationID = '';
 let participantID = '';
@@ -74,26 +72,48 @@ async function createDialogFlowConversation() {
 
 createDialogFlowConversation();
 
-function createDetectStream() {
+function createDetectStream(isFirst) {
   console.log('conversationID in createDetectStream: ' + conversationID);
   console.log('participantID in createDetectStream: ' + participantID);
 
   const tempParticipantConfig = `projects/${process.env.DIALOGFLOW_CX_PROJECT_ID}/locations/${process.env.DIALOGFLOW_CX_LOCATION}/conversations/${conversationID}/participants/${participantID}`;
-  const tempAudioConfig = {
-    audioEncoding: 'AUDIO_ENCODING_MULAW',
-    sampleRateHertz: 8000,
-    languageCode: 'en-us',
-    modelVariant: 'USE_BEST_AVAILABLE',
-    singleUtterance: true,
-    bargeInConfig: {
-      noBargeInDuration: {
-        seconds: 5,
+  let tempAudioConfig = '';
+  if (isFirst) {
+    tempAudioConfig = {
+      audioEncoding: 'AUDIO_ENCODING_MULAW',
+      sampleRateHertz: 8000,
+      languageCode: 'en-us',
+      //model: 'phone_call',
+      modelVariant: 'USE_ENHANCED',
+      singleUtterance: true,
+      bargeInConfig: {
+        noBargeInDuration: {
+          seconds: 5,
+        },
+        totalDuration: {
+          seconds: 3600,
+        },
       },
-      totalDuration: {
-        seconds: 15,
+    };
+  } else {
+    tempAudioConfig = {
+      audioEncoding: 'AUDIO_ENCODING_MULAW',
+      sampleRateHertz: 8000,
+      languageCode: 'en-us',
+      //model: 'phone_call',
+      modelVariant: 'USE_ENHANCED',
+      singleUtterance: true,
+      bargeInConfig: {
+        noBargeInDuration: {
+          seconds: 5,
+        },
+        totalDuration: {
+          seconds: 30,
+        },
       },
-    },
-  };
+    };
+  }
+
   const tempReplyAudioConfig = {
     audioEncoding: 'OUTPUT_AUDIO_ENCODING_LINEAR_16',
     sampleRateHertz: 16000,
@@ -180,7 +200,7 @@ class DialogflowService extends EventEmitter {
       // Generate the streams
       this._requestStream = new PassThrough({ objectMode: true });
       this.audioStream = createAudioRequestStream();
-      this.detectStream = createDetectStream();
+      this.detectStream = createDetectStream(this.isFirst);
       this.responseStream = new PassThrough({ objectMode: true });
       this.audioResponseStream = createAudioResponseStream();
       if (this.isFirst) {
@@ -235,15 +255,14 @@ class DialogflowService extends EventEmitter {
         }
 
         if (
-          data.queryResult &&
-          data.queryResult.intent &&
-          data.queryResult.intent.endInteraction
+          data.recognitionResult &&
+          data.recognitionResult.messageType === 'END_OF_SINGLE_UTTERANCE'
         ) {
           console.log(
-            `Ending interaction with: ${data.queryResult.fulfillmentText}`
+            `Ending interaction with: ${data.recognitionResult.transcript}`
           );
-          this.finalQueryResult = data.queryResult;
-          this.stop();
+          //this.finalQueryResult = data.recognitionResult;
+          //this.stop();
         }
       });
       this.audioResponseStream.on('data', (data) => {
