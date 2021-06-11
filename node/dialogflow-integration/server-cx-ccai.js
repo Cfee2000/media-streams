@@ -7,7 +7,7 @@ const websocketStream = require('websocket-stream/stream');
 const Twilio = require('twilio');
 const { DialogflowService } = require('./dialogflow-cx-ccai');
 
-const PORT = process.env.PORT || 8080;
+const PORT = process.env.PORT || 3000;
 
 const app = express();
 // extend express app with app.ws()
@@ -53,10 +53,14 @@ app.ws('/media', (ws, req) => {
   // This will get populated on callStarted
   let callSid;
   let streamSid;
+
   // MediaStream coming from Twilio
   const mediaStream = websocketStream(ws, {
     binary: false,
   });
+
+  // pakmingw@: added try catch to handle hangup exceptions
+
   const dialogflowService = new DialogflowService();
 
   mediaStream.on('data', (data) => {
@@ -86,10 +90,20 @@ app.ws('/media', (ws, req) => {
     };
     const mediaJSON = JSON.stringify(mediaMessage);
     console.log(`Sending audio (${audio.length} characters)`);
-    mediaStream.write(mediaJSON);
+    // add catch here for hangup
+    try {
+      mediaStream.write(mediaJSON);
+    } catch (err) {
+      console.error('Error: ' + err);
+      dialogflowService.isStopped = true;
+      dialogflowService.stop();
+      dialogflowService.finish();
+    }
 
     if (dialogflowService.audioStream.isPaused()) {
       console.log('audio stream is paused $$$$$$$$$$$$$$$');
+      //dialogflowService.audioStream.resume();
+      //console.log('audio stream is unpaused $$$$$$$$$$$$$$$');
     }
     if (dialogflowService.responseStream.isPaused()) {
       console.log('response stream is paused $$$$$$$$$$$$$$$');
@@ -114,7 +128,15 @@ app.ws('/media', (ws, req) => {
       };
       const markJSON = JSON.stringify(markMessage);
       console.log('Sending end of interaction mark', markJSON);
-      mediaStream.write(markJSON);
+      // handles hangup
+      try {
+        mediaStream.write(markJSON);
+      } catch (err) {
+        console.error('Error: ' + err);
+        dialogflowService.isStopped = true;
+        dialogflowService.stop();
+        dialogflowService.finish();
+      }
     }
   });
 
