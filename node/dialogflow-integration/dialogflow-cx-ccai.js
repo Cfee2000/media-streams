@@ -4,10 +4,17 @@ const uuid = require('uuid');
 const structjson = require('structjson');
 const WaveFile = require('wavefile').WaveFile;
 const { ConversationsClient, ParticipantsClient, v2beta1 } =
-  require('@google-cloud/dialogflow').v2;
+  require('@google-cloud/dialogflow').v2beta1;
 
 let conversationID = '';
 let participantID = '';
+let participantConfig = '';
+let welcomeIntentResponse = '';
+
+const replyAudioConfig = {
+  audioEncoding: 'OUTPUT_AUDIO_ENCODING_LINEAR_16',
+  sampleRateHertz: 16000,
+};
 
 //STEP 1: Create a new instance of a ConversationsClient and ParticipantsClient and provide the apiEndpoint
 const conversationsClient = new ConversationsClient({
@@ -65,6 +72,29 @@ async function createDialogFlowConversation() {
       participantParentPath.lastIndexOf('/') + 1
     );
     console.log('participantID: ' + participantID);
+
+    participantConfig = `projects/${process.env.DIALOGFLOW_CX_PROJECT_ID}/locations/${process.env.DIALOGFLOW_CX_LOCATION}/conversations/${conversationID}/participants/${participantID}`;
+
+    console.log('Participant Config: ' + participantConfig);
+
+    //https://cloud.google.com/dialogflow/priv/docs/reference/rpc/google.cloud.dialogflow.v2beta1#google.cloud.dialogflow.v2beta1.EventInput
+    const welcomeIntentEventInput = {
+      name: 'WELCOME',
+      languageCode: 'en-US',
+    };
+
+    let analyzeContentWelcomeRequest = {
+      participant: participantConfig,
+      eventInput: welcomeIntentEventInput,
+      replyAudioConfig: replyAudioConfig,
+    };
+
+    const [tempWelcomeIntentResponse] = await participantsClient.analyzeContent(
+      analyzeContentWelcomeRequest
+    );
+    console.log('Welcome Intent');
+    console.log(tempWelcomeIntentResponse);
+    welcomeIntentResponse = tempWelcomeIntentResponse;
   } catch (err) {
     console.log(err);
   }
@@ -72,47 +102,29 @@ async function createDialogFlowConversation() {
 
 createDialogFlowConversation();
 
-function createDetectStream(isFirst) {
+function createDetectStream(isFirst, audioDuration) {
   console.log('conversationID in createDetectStream: ' + conversationID);
   console.log('participantID in createDetectStream: ' + participantID);
+  //console.log('welcome intent: ' + welcomeIntentResponse.replyText);
 
   const tempParticipantConfig = `projects/${process.env.DIALOGFLOW_CX_PROJECT_ID}/locations/${process.env.DIALOGFLOW_CX_LOCATION}/conversations/${conversationID}/participants/${participantID}`;
-  let tempAudioConfig = '';
-  if (isFirst) {
-    tempAudioConfig = {
-      audioEncoding: 'AUDIO_ENCODING_MULAW',
-      sampleRateHertz: 8000,
-      languageCode: 'en-us',
-      //model: 'phone_call',
-      modelVariant: 'USE_ENHANCED',
-      singleUtterance: true,
-      bargeInConfig: {
-        noBargeInDuration: {
-          seconds: 5,
-        },
-        totalDuration: {
-          seconds: 3600,
-        },
+
+  const tempAudioConfig = {
+    audioEncoding: 'AUDIO_ENCODING_MULAW',
+    sampleRateHertz: 8000,
+    languageCode: 'en-us',
+    //model: 'phone_call',
+    modelVariant: 'USE_ENHANCED',
+    singleUtterance: true,
+    bargeInConfig: {
+      noBargeInDuration: {
+        seconds: audioDuration,
       },
-    };
-  } else {
-    tempAudioConfig = {
-      audioEncoding: 'AUDIO_ENCODING_MULAW',
-      sampleRateHertz: 8000,
-      languageCode: 'en-us',
-      //model: 'phone_call',
-      modelVariant: 'USE_ENHANCED',
-      singleUtterance: true,
-      bargeInConfig: {
-        noBargeInDuration: {
-          seconds: 5,
-        },
-        totalDuration: {
-          seconds: 30,
-        },
+      totalDuration: {
+        seconds: 30,
       },
-    };
-  }
+    },
+  };
 
   const tempReplyAudioConfig = {
     audioEncoding: 'OUTPUT_AUDIO_ENCODING_LINEAR_16',
@@ -127,6 +139,7 @@ function createDetectStream(isFirst) {
 
   const detectStream = participantsClient.streamingAnalyzeContent();
   detectStream.write(streamingAnalyzeContentRequest);
+
   return detectStream;
 }
 
@@ -197,18 +210,33 @@ class DialogflowService extends EventEmitter {
     //console.log('in startPipeline');
     //console.log(this.isReady);
     if (!this.isReady) {
+      //new variable for cx to calculate the duration of the audio sent back from google so that we can apply the correct barge-in
+      this.audioDuration = 5; //TBD - Hard Coded for now
+
       // Generate the streams
       this._requestStream = new PassThrough({ objectMode: true });
       this.audioStream = createAudioRequestStream();
-      this.detectStream = createDetectStream(this.isFirst);
+      this.detectStream = new PassThrough({ objectMode: true });
+      //this.detectStream = createDetectStream(this.isFirst, this.audioDuration);
       this.responseStream = new PassThrough({ objectMode: true });
       this.audioResponseStream = createAudioResponseStream();
+
+      //this.detectStream = new PassThrough({ objectMode: true });
       if (this.isFirst) {
         this.isFirst = false;
-        // isFirst trigger has to be moved here because you need to setup the other streams first
-        this.detectStream.write({ inputText: 'hello' });
+        // // isFirst trigger has to be moved here because you need to setup the other streams first
+        // this.detectStream.write({ inputText: 'hello' });
+        this.detectStream.write(welcomeIntentResponse);
+      } else {
+        // this._requestStream = new PassThrough({ objectMode: true });
+        // this.audioStream = createAudioRequestStream();
+        this.detectStream = createDetectStream(
+          this.isFirst,
+          this.audioDuration
+        );
       }
       this.isInterrupted = false;
+
       // Pipeline is async....
       pipeline(
         this._requestStream,
