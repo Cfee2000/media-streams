@@ -291,6 +291,8 @@ class DialogflowService extends EventEmitter {
           );
           //this.finalQueryResult = data.recognitionResult;
           //this.stop();
+          this.audioStream.end();
+          this.detectStream.end();
         }
       });
       this.audioResponseStream.on('data', (data) => {
