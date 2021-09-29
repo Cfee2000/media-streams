@@ -8,8 +8,7 @@ const {
 const conversationsRequest = {
   parent: `projects/cfeehantwiliocxintegration/locations/us-central1`,
   conversation: {
-    conversationProfile:
-      'projects/cfeehantwiliocxintegration/locations/us-central1/conversationProfiles/WTR5kahsRO-OwQPaH7L_EQ',
+    conversationProfile: `projects/cfeehantwiliocxintegration/locations/us-central1/conversationProfiles/${process.env.DIALOGFLOW_CX_CONVERSATION_PROFILE_ID}`,
   },
 };
 
