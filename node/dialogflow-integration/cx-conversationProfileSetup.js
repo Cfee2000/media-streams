@@ -10,7 +10,7 @@ const conversationProfileRequest = {
   conversationProfile: {
     displayName: 'Random Agent Name',
     automatedAgentConfig: {
-      agent: `projects/${process.env.DIALOGFLOW_CX_PROJECT_ID}/locations/us-central1/agents/c8613d53-f3b7-49c0-be4c-4787fc85f9dc`,
+      agent: `projects/${process.env.DIALOGFLOW_CX_PROJECT_ID}/locations/us-central1/agents/${process.env.DIALOGFLOW_CX_AGENT_ID}`,
     },
   },
 };
